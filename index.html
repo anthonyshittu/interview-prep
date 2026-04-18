@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NatWest Mentor — Interview Prep</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<header>
+  <div class="logo">NatWest Mentor · Prep</div>
+  <nav>
+    <button class="active" data-view="study">Study</button>
+    <button data-view="quiz">Quiz</button>
+    <button data-view="weak">Weak Spots</button>
+  </nav>
+  <div class="progress-summary" id="header-progress" style="display:none">
+    Mastered: <span id="mastered-count">0</span> / <span id="total-count">0</span>
+  </div>
+</header>
+
+<main>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       STUDY VIEW
+  ══════════════════════════════════════════════════════════════════════ -->
+  <div class="view active" id="view-study">
+    <div class="page-title">Study Guide</div>
+    <div class="page-sub">Click any topic to expand. Read through before taking the quiz.</div>
+    <div class="section-tabs" id="section-tabs"></div>
+    <div class="section-title" id="section-title"></div>
+    <div id="section-content"></div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       QUIZ VIEW
+  ══════════════════════════════════════════════════════════════════════ -->
+  <div class="view" id="view-quiz">
+    <div class="page-title">Quiz Mode</div>
+    <div class="page-sub">Read the question, think of your answer, then reveal and rate yourself.</div>
+
+    <div class="quiz-controls">
+      <label for="filter-cat">Category</label>
+      <select id="filter-cat">
+        <option value="all">All categories</option>
+        <option value="solution">Solution</option>
+        <option value="functions">Functions</option>
+        <option value="execution">Execution Flow</option>
+        <option value="complexity">Complexity</option>
+        <option value="typescript">TypeScript</option>
+        <option value="improvements">Potential Improvements</option>
+        <option value="scaling">Scaling to 1M</option>
+        <option value="react">React</option>
+        <option value="graphql">GraphQL</option>
+        <option value="nodejs_mysql">Node.js &amp; MySQL</option>
+        <option value="security">Security</option>
+        <option value="cicd">CI/CD &amp; Infrastructure</option>
+      </select>
+
+      <label for="filter-diff">Difficulty</label>
+      <select id="filter-diff">
+        <option value="all">All difficulties</option>
+        <option value="easy">Easy</option>
+        <option value="medium">Medium</option>
+        <option value="hard">Hard</option>
+      </select>
+
+      <label for="filter-mode">Mode</label>
+      <select id="filter-mode">
+        <option value="all">All questions</option>
+        <option value="weak">Weak spots only</option>
+      </select>
+
+      <button id="start-btn">Start Quiz</button>
+    </div>
+
+    <div id="quiz-area">
+      <div class="progress-bar-track">
+        <div class="progress-bar-fill" id="quiz-progress-bar" style="width:0%"></div>
+      </div>
+
+      <div class="q-meta">
+        <span class="q-counter" id="q-counter">Question 1 of 10</span>
+        <span class="badge" id="q-diff-badge"></span>
+        <span class="badge" id="q-cat-badge"></span>
+      </div>
+
+      <div class="question-box">
+        <div class="question-text" id="q-text"></div>
+        <div class="tip-text" id="q-tip"></div>
+      </div>
+
+      <button id="reveal-btn">▶ Reveal answer</button>
+
+      <div class="answer-box" id="answer-box"></div>
+
+      <div class="rating-row" id="rating-row">
+        <button class="rating-btn btn-got-it"  data-rating="got-it">✓ Got it <kbd>1</kbd></button>
+        <button class="rating-btn btn-nearly"  data-rating="nearly">~ Nearly <kbd>2</kbd></button>
+        <button class="rating-btn btn-no-idea" data-rating="no-idea">✗ No idea <kbd>3</kbd></button>
+      </div>
+      <div class="kbd-hint" id="kbd-hint">Press <kbd>Space</kbd> to reveal · <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> to rate</div>
+    </div>
+
+    <div id="results-area">
+      <div class="results-score" id="results-score">0%</div>
+      <div class="results-label" id="results-label"></div>
+      <div class="results-breakdown">
+        <div class="rb-item">
+          <div class="rb-num green-num"  id="r-got-it">0</div>
+          <div class="rb-lbl">Got it</div>
+        </div>
+        <div class="rb-item">
+          <div class="rb-num yellow-num" id="r-nearly">0</div>
+          <div class="rb-lbl">Nearly</div>
+        </div>
+        <div class="rb-item">
+          <div class="rb-num red-num"    id="r-no-idea">0</div>
+          <div class="rb-lbl">No idea</div>
+        </div>
+      </div>
+      <div class="results-actions">
+        <button id="restart-btn">Try again</button>
+        <button id="review-toggle-btn" class="btn-secondary" style="display:none">Review this session ▼</button>
+      </div>
+      <div id="review-area"></div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       WEAK SPOTS VIEW
+  ══════════════════════════════════════════════════════════════════════ -->
+  <div class="view" id="view-weak">
+    <div class="page-title">Weak Spots</div>
+    <div class="page-sub">Questions you marked "No idea" or "Nearly" — review these first.</div>
+    <div id="weak-content"></div>
+  </div>
+
+</main>
+
+<script src="data.js"></script>
+<script>
+// ════════════════════════════════════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════════════════════════════════════
+
+const STORAGE_KEY = 'interview_prep_scores';
+
+function loadScores() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; }
+  catch { return {}; }
+}
+function saveScores(s) { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); }
+
+let scores = loadScores();
+
+function recordScore(id, rating) {
+  if (!scores[id]) scores[id] = { gotIt: 0, nearly: 0, noIdea: 0 };
+  if (rating === 'got-it')  scores[id].gotIt++;
+  if (rating === 'nearly')  scores[id].nearly++;
+  if (rating === 'no-idea') scores[id].noIdea++;
+  saveScores(scores);
+  updateHeaderProgress();
+}
+
+function isMastered(id) {
+  const s = scores[id];
+  if (!s) return false;
+  return s.gotIt >= 3 && s.gotIt > s.noIdea * 2;
+}
+
+function isWeak(id) {
+  const s = scores[id];
+  if (!s) return false;
+  return (s.noIdea > 0 || s.nearly > 1) && !isMastered(id);
+}
+
+function updateHeaderProgress() {
+  const mastered = QUESTIONS.filter(q => isMastered(q.id)).length;
+  document.getElementById('mastered-count').textContent = mastered;
+  document.getElementById('total-count').textContent = QUESTIONS.length;
+  document.getElementById('header-progress').style.display = mastered > 0 ? '' : 'none';
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// ANSWER RENDERER — formats code lines differently from prose
+// ════════════════════════════════════════════════════════════════════════════
+
+function renderAnswer(text, container) {
+  container.innerHTML = '';
+  const lines = text.split('\n');
+  let codeBuffer = [];
+
+  function flushCode() {
+    if (!codeBuffer.length) return;
+    const block = document.createElement('div');
+    block.className = 'ans-code-block';
+    codeBuffer.forEach(line => {
+      const row = document.createElement('div');
+      row.className = 'ans-code-line';
+      row.textContent = line;
+      block.appendChild(row);
+    });
+    container.appendChild(block);
+    codeBuffer = [];
+  }
+
+  lines.forEach(line => {
+    const isCode = line.startsWith('  ') || line.startsWith('\t');
+    if (isCode) {
+      codeBuffer.push(line);
+    } else {
+      flushCode();
+      if (line === '') {
+        container.appendChild(document.createElement('br'));
+      } else {
+        const p = document.createElement('div');
+        p.className = 'ans-prose';
+        p.textContent = line;
+        container.appendChild(p);
+      }
+    }
+  });
+  flushCode();
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// NAV
+// ════════════════════════════════════════════════════════════════════════════
+
+document.querySelectorAll('nav button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    document.getElementById('view-' + btn.dataset.view).classList.add('active');
+    if (btn.dataset.view === 'weak') renderWeak();
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// STUDY VIEW
+// ════════════════════════════════════════════════════════════════════════════
+
+let currentSection = SECTIONS[0].id;
+
+function renderSectionTabs() {
+  const container = document.getElementById('section-tabs');
+  container.innerHTML = '';
+  SECTIONS.forEach(section => {
+    const btn = document.createElement('button');
+    btn.className = 'section-tab' + (section.id === currentSection ? ' active' : '');
+    btn.textContent = section.title;
+    btn.addEventListener('click', () => {
+      currentSection = section.id;
+      renderSectionTabs();
+      renderSectionContent();
+    });
+    container.appendChild(btn);
+  });
+}
+
+function renderSectionContent() {
+  const section = SECTIONS.find(s => s.id === currentSection);
+  document.getElementById('section-title').textContent = section.title;
+  const container = document.getElementById('section-content');
+  container.innerHTML = '';
+
+  section.content.forEach((item, i) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+
+    const header = document.createElement('div');
+    header.className = 'card-header';
+    header.innerHTML = `<span>${item.heading}</span><span class="chevron">▼</span>`;
+    header.addEventListener('click', () => card.classList.toggle('open'));
+
+    const body = document.createElement('div');
+    body.className = 'card-body';
+    renderAnswer(item.body, body);
+
+    card.appendChild(header);
+    card.appendChild(body);
+    container.appendChild(card);
+    if (i === 0) card.classList.add('open');
+  });
+}
+
+renderSectionTabs();
+renderSectionContent();
+
+// ════════════════════════════════════════════════════════════════════════════
+// QUIZ VIEW
+// ════════════════════════════════════════════════════════════════════════════
+
+let quizQueue     = [];
+let quizIndex     = 0;
+let quizResults   = { gotIt: 0, nearly: 0, noIdea: 0 };
+let sessionLog    = []; // { question, answer, tip, category, difficulty, rating }
+
+const CATEGORY_LABELS = {
+  solution: 'Solution', functions: 'Functions', execution: 'Execution',
+  complexity: 'Complexity', typescript: 'TypeScript',
+  improvements: 'Improvements', scaling: 'Scaling',
+  react: 'React', graphql: 'GraphQL', nodejs_mysql: 'Node.js & MySQL',
+  security: 'Security', cicd: 'CI/CD',
+};
+
+function buildQueue() {
+  const cat  = document.getElementById('filter-cat').value;
+  const diff = document.getElementById('filter-diff').value;
+  const mode = document.getElementById('filter-mode').value;
+
+  let pool = QUESTIONS.filter(q => {
+    if (cat  !== 'all' && q.category  !== cat)  return false;
+    if (diff !== 'all' && q.difficulty !== diff) return false;
+    if (mode === 'weak' && !isWeak(q.id))        return false;
+    return true;
+  });
+
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+
+  pool.sort((a, b) => (isWeak(a.id) ? 0 : 1) - (isWeak(b.id) ? 0 : 1));
+  return pool;
+}
+
+document.getElementById('start-btn').addEventListener('click', startQuiz);
+document.getElementById('restart-btn').addEventListener('click', startQuiz);
+
+function startQuiz() {
+  quizQueue   = buildQueue();
+  if (quizQueue.length === 0) { alert('No questions match your filters.'); return; }
+  quizIndex   = 0;
+  quizResults = { gotIt: 0, nearly: 0, noIdea: 0 };
+  sessionLog  = [];
+  document.getElementById('results-area').style.display = 'none';
+  document.getElementById('review-area').innerHTML = '';
+  document.getElementById('review-toggle-btn').style.display = 'none';
+  document.getElementById('quiz-area').style.display = 'block';
+  showQuestion();
+}
+
+function isQuizActive() {
+  return document.getElementById('quiz-area').style.display !== 'none';
+}
+
+function isAnswerRevealed() {
+  return document.getElementById('answer-box').classList.contains('visible');
+}
+
+function showQuestion() {
+  if (quizIndex >= quizQueue.length) { showResults(); return; }
+
+  const q     = quizQueue[quizIndex];
+  const total = quizQueue.length;
+
+  document.getElementById('quiz-progress-bar').style.width = ((quizIndex / total) * 100) + '%';
+  document.getElementById('q-counter').textContent = `Question ${quizIndex + 1} of ${total}`;
+
+  const diffBadge = document.getElementById('q-diff-badge');
+  diffBadge.textContent = q.difficulty;
+  diffBadge.className = 'badge badge-' + q.difficulty;
+
+  const catBadge = document.getElementById('q-cat-badge');
+  catBadge.textContent = CATEGORY_LABELS[q.category] || q.category;
+  catBadge.className = 'badge badge-' + q.category;
+
+  document.getElementById('q-text').textContent = q.question;
+  document.getElementById('q-tip').textContent = '💡 ' + q.tip;
+
+  const answerBox = document.getElementById('answer-box');
+  answerBox.innerHTML = '';
+  answerBox.classList.remove('visible');
+  renderAnswer(q.answer, answerBox);
+
+  document.getElementById('rating-row').classList.remove('visible');
+  document.getElementById('reveal-btn').style.display = '';
+  document.getElementById('kbd-hint').style.display = '';
+}
+
+document.getElementById('reveal-btn').addEventListener('click', revealAnswer);
+
+function revealAnswer() {
+  document.getElementById('answer-box').classList.add('visible');
+  document.getElementById('rating-row').classList.add('visible');
+  document.getElementById('reveal-btn').style.display = 'none';
+}
+
+document.getElementById('rating-row').addEventListener('click', e => {
+  const btn = e.target.closest('[data-rating]');
+  if (!btn) return;
+  submitRating(btn.dataset.rating);
+});
+
+function submitRating(rating) {
+  const q = quizQueue[quizIndex];
+  recordScore(q.id, rating);
+  quizResults[rating === 'got-it' ? 'gotIt' : rating === 'nearly' ? 'nearly' : 'noIdea']++;
+  sessionLog.push({ ...q, rating });
+  quizIndex++;
+  showQuestion();
+}
+
+// ── Keyboard shortcuts ───────────────────────────────────────────────────────
+
+document.addEventListener('keydown', e => {
+  // Only fire when quiz tab is active
+  if (!document.getElementById('view-quiz').classList.contains('active')) return;
+  if (!isQuizActive()) return;
+
+  // Ignore when typing in an input/select
+  if (['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName)) return;
+
+  if ((e.code === 'Space' || e.code === 'Enter') && !isAnswerRevealed()) {
+    e.preventDefault();
+    revealAnswer();
+    return;
+  }
+
+  if (isAnswerRevealed()) {
+    if (e.key === '1') submitRating('got-it');
+    if (e.key === '2') submitRating('nearly');
+    if (e.key === '3') submitRating('no-idea');
+  }
+});
+
+// ── Results + session review ─────────────────────────────────────────────────
+
+function showResults() {
+  document.getElementById('quiz-area').style.display = 'none';
+  document.getElementById('results-area').style.display = 'block';
+
+  const total = quizQueue.length;
+  const pct   = total > 0 ? Math.round((quizResults.gotIt / total) * 100) : 0;
+
+  document.getElementById('results-score').textContent = pct + '%';
+  document.getElementById('r-got-it').textContent  = quizResults.gotIt;
+  document.getElementById('r-nearly').textContent  = quizResults.nearly;
+  document.getElementById('r-no-idea').textContent = quizResults.noIdea;
+
+  const label = pct === 100 ? 'Perfect — you\'re ready. 🎉'
+    : pct >= 80 ? 'Strong. Review the ones you missed below.'
+    : pct >= 60 ? 'Getting there. Review missed questions below.'
+    : 'Keep going. Check every missed question below.';
+  document.getElementById('results-label').textContent = label;
+
+  // Show review button only if there's something to review
+  const missed = sessionLog.filter(l => l.rating !== 'got-it');
+  const toggleBtn = document.getElementById('review-toggle-btn');
+  if (missed.length > 0) {
+    toggleBtn.style.display = '';
+    toggleBtn.textContent = `Review missed questions (${missed.length}) ▼`;
+    toggleBtn.onclick = () => {
+      const area = document.getElementById('review-area');
+      if (area.innerHTML) {
+        area.innerHTML = '';
+        toggleBtn.textContent = `Review missed questions (${missed.length}) ▼`;
+      } else {
+        renderReview(sessionLog);
+        toggleBtn.textContent = `Hide review ▲`;
+      }
+    };
+  }
+}
+
+function renderReview(log) {
+  const area = document.getElementById('review-area');
+  area.innerHTML = '';
+
+  const title = document.createElement('div');
+  title.className = 'review-title';
+  title.textContent = 'Session Review — click any question to expand';
+  area.appendChild(title);
+
+  log.forEach(entry => {
+    const ratingClass = entry.rating === 'got-it' ? 'review-got-it'
+      : entry.rating === 'nearly' ? 'review-nearly' : 'review-no-idea';
+    const ratingLabel = entry.rating === 'got-it' ? '✓ Got it'
+      : entry.rating === 'nearly' ? '~ Nearly' : '✗ No idea';
+
+    const item = document.createElement('div');
+    item.className = 'review-item ' + ratingClass;
+
+    const qRow = document.createElement('div');
+    qRow.className = 'review-item-header';
+    qRow.innerHTML = `
+      <span class="review-q-text">${entry.question}</span>
+      <span class="review-rating-badge ${ratingClass}-badge">${ratingLabel}</span>
+    `;
+
+    const ansDiv = document.createElement('div');
+    ansDiv.className = 'review-answer';
+    renderAnswer(entry.answer, ansDiv);
+
+    item.appendChild(qRow);
+    item.appendChild(ansDiv);
+    item.style.cursor = 'pointer';
+
+    // Auto-expand missed questions, collapse got-it
+    if (entry.rating !== 'got-it') ansDiv.style.display = 'block';
+
+    qRow.addEventListener('click', () => {
+      ansDiv.style.display = ansDiv.style.display === 'none' ? 'block' : 'none';
+    });
+
+    area.appendChild(item);
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// WEAK SPOTS VIEW
+// ════════════════════════════════════════════════════════════════════════════
+
+function renderWeak() {
+  const container = document.getElementById('weak-content');
+  const weakQs = QUESTIONS.filter(q => isWeak(q.id));
+
+  if (weakQs.length === 0) {
+    container.innerHTML = `<div class="weak-empty">No weak spots yet.<br>Take the quiz first to track your answers.</div>`;
+    return;
+  }
+
+  container.innerHTML = '';
+  const list = document.createElement('div');
+  list.className = 'weak-list';
+
+  weakQs.forEach(q => {
+    const s = scores[q.id] || {};
+    const item = document.createElement('div');
+    item.className = 'weak-item';
+    item.innerHTML = `
+      <div class="weak-item-q">${q.question}</div>
+      <div class="weak-item-meta">
+        <span class="badge badge-${q.difficulty}">${q.difficulty}</span>
+        <span class="badge badge-${q.category}">${CATEGORY_LABELS[q.category]}</span>
+        <span class="miss-count">✗ ${s.noIdea || 0} missed · ~ ${s.nearly || 0} nearly</span>
+      </div>
+    `;
+
+    const ansDiv = document.createElement('div');
+    ansDiv.className = 'weak-answer';
+    ansDiv.style.display = 'none';
+    renderAnswer(q.answer, ansDiv);
+    item.appendChild(ansDiv);
+    item.style.cursor = 'pointer';
+    item.addEventListener('click', () => {
+      ansDiv.style.display = ansDiv.style.display === 'none' ? 'block' : 'none';
+    });
+
+    list.appendChild(item);
+  });
+
+  container.appendChild(list);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════════════════════════════════════
+
+updateHeaderProgress();
+</script>
+</body>
+</html>
