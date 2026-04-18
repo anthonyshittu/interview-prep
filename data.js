@@ -677,7 +677,7 @@ Subscription — real-time server-push over WebSocket.
     employeeAdded(companyId: $companyId) { firstName lastName }
   }
   // When a new employee is added, every subscribed client gets notified
-  // Relevant for NatWest Mentor: HR admins see new starters appear in real-time
+  // Relevant for an HR platform: admins see new starters appear in real-time
 
 For this role: searchForNames lives inside a Query resolver. Adding employees = Mutation.`,
       },
@@ -923,7 +923,7 @@ JWT (JSON Web Token):
   - Stateless — server doesn't need to store sessions
   - Short TTL (15 min access token) + refresh token (longer lived, stored in httpOnly cookie)
 
-For NatWest Mentor: employees belong to client companies. Authorisation must ensure Company A cannot access Company B's employee data — row-level security in the DB or in the resolver.
+In a multi-tenant system: employees belong to client companies. Authorisation must ensure Company A cannot access Company B's employee data — row-level security in the DB or in the resolver.
 
 Common mistake: checking authentication but not authorisation — a valid token doesn't mean the user can access any resource.`,
       },
@@ -951,7 +951,7 @@ Example with zod:
         body: `CORS (Cross-Origin Resource Sharing) — browsers block requests from one origin to another unless the server explicitly allows it.
 
 In Express:
-  app.use(cors({ origin: 'https://natwestmentor.com' }));
+  app.use(cors({ origin: 'https://app.example.com' }));
   // Only your frontend can call the API
 
 In API Gateway (AWS): configure allowed origins in the CORS settings for each route.
@@ -1053,7 +1053,7 @@ Caching strategies (via the service worker):
   Network First  — try network, fall back to cache (good for API data)
   Stale While Revalidate — serve cached version immediately, update cache in background
 
-For NatWest Mentor: a PWA would let users access HR guidance offline — useful for employees in areas with poor connectivity.`,
+For an HR platform: a PWA would let users access guidance offline — useful for employees in areas with poor connectivity.`,
       },
       {
         heading: 'Deployment pipeline end-to-end',
@@ -1279,7 +1279,7 @@ function searchForNames({ arrayToSearch, searchString }: SearchParams): Employee
     difficulty: 'medium',
     question: 'What does strictNullChecks do and what would it change in this code?',
     answer: 'strictNullChecks prevents null and undefined from being assigned to typed variables unless explicitly allowed. In this code: arrayToSearch and searchString cannot be null/undefined without adding Employee[] | null or string | undefined to the type. At call sites, passing undefined would be a compile error. It forces defensive thinking about missing data at the type level rather than at runtime.',
-    tip: 'strictNullChecks is part of the "strict": true tsconfig flag — NatWest Mentor almost certainly has this enabled.',
+    tip: 'strictNullChecks is part of the "strict": true tsconfig flag — production TypeScript projects almost certainly have this enabled.',
   },
 
   // ── IMPROVEMENTS ──────────────────────────────────────────────────────────
@@ -1486,7 +1486,7 @@ function searchForNames({ arrayToSearch, searchString }: SearchParams): Employee
     category: 'graphql',
     difficulty: 'hard',
     question: 'How would you handle authorisation in a GraphQL resolver?',
-    answer: 'Three approaches, from simplest to most robust:\n\n1. In the resolver directly:\n  employees: (_, __, context) => {\n    if (!context.user) throw new AuthenticationError(\'Not logged in\');\n    if (!context.user.canViewEmployees) throw new ForbiddenError(\'No access\');\n    return db.getEmployees(context.user.companyId); // row-level security\n  }\n\n2. Directive-based (declarative):\n  type Query {\n    employees: [Employee!]! @auth(requires: EMPLOYEE_READ)\n  }\n\n3. Schema middleware (graphql-shield):\n  const permissions = shield({\n    Query: { employees: isAuthenticated }\n  });\n\nCritical for NatWest Mentor: always filter by companyId from the auth context. A valid JWT from Company A must never return Company B\'s employee data.',
+    answer: 'Three approaches, from simplest to most robust:\n\n1. In the resolver directly:\n  employees: (_, __, context) => {\n    if (!context.user) throw new AuthenticationError(\'Not logged in\');\n    if (!context.user.canViewEmployees) throw new ForbiddenError(\'No access\');\n    return db.getEmployees(context.user.companyId); // row-level security\n  }\n\n2. Directive-based (declarative):\n  type Query {\n    employees: [Employee!]! @auth(requires: EMPLOYEE_READ)\n  }\n\n3. Schema middleware (graphql-shield):\n  const permissions = shield({\n    Query: { employees: isAuthenticated }\n  });\n\nCritical in a multi-tenant system: always filter by companyId from the auth context. A valid JWT from Company A must never return Company B\'s employee data.',
     tip: 'Row-level security (filtering by companyId) is the most important point — authentication alone is not enough.',
   },
 
@@ -1528,7 +1528,7 @@ function searchForNames({ arrayToSearch, searchString }: SearchParams): Employee
     category: 'nodejs_mysql',
     difficulty: 'hard',
     question: 'How would you handle database connection pooling in a Node.js Lambda function?',
-    answer: 'Problem: Lambda creates a new container per invocation. Opening a new DB connection on every invocation is slow (100–300ms) and exhausts MySQL\'s connection limit at scale.\n\nSolution: initialise the connection pool OUTSIDE the handler function so it\'s reused across invocations on the same container:\n\n  // module level — runs once per container lifecycle\n  const pool = mysql.createPool({\n    host: process.env.DB_HOST,\n    user: process.env.DB_USER,\n    password: await getSecret(\'db-password\'),\n    database: \'natwest_mentor\',\n    connectionLimit: 5,\n  });\n\n  // handler — reuses the pool\n  exports.handler = async (event) => {\n    const [rows] = await pool.execute(\'SELECT * FROM employees WHERE companyId = ?\', [companyId]);\n    return rows;\n  };\n\nAdditional consideration: use RDS Proxy between Lambda and RDS. It maintains a persistent connection pool to the DB and multiplexes Lambda connections through it — prevents connection exhaustion at high concurrency.',
+    answer: 'Problem: Lambda creates a new container per invocation. Opening a new DB connection on every invocation is slow (100–300ms) and exhausts MySQL\'s connection limit at scale.\n\nSolution: initialise the connection pool OUTSIDE the handler function so it\'s reused across invocations on the same container:\n\n  // module level — runs once per container lifecycle\n  const pool = mysql.createPool({\n    host: process.env.DB_HOST,\n    user: process.env.DB_USER,\n    password: await getSecret(\'db-password\'),\n    database: \'hr_platform\',\n    connectionLimit: 5,\n  });\n\n  // handler — reuses the pool\n  exports.handler = async (event) => {\n    const [rows] = await pool.execute(\'SELECT * FROM employees WHERE companyId = ?\', [companyId]);\n    return rows;\n  };\n\nAdditional consideration: use RDS Proxy between Lambda and RDS. It maintains a persistent connection pool to the DB and multiplexes Lambda connections through it — prevents connection exhaustion at high concurrency.',
     tip: 'RDS Proxy is the production answer for Lambda + MySQL at scale. Know it exists even if you haven\'t used it.',
   },
 
@@ -1538,8 +1538,8 @@ function searchForNames({ arrayToSearch, searchString }: SearchParams): Employee
     category: 'security',
     difficulty: 'easy',
     question: 'What is the difference between authentication and authorisation?',
-    answer: 'Authentication — verifying who you are. "Are you who you claim to be?"\n  → Login with username/password, JWT token, OAuth\n\nAuthorisation — verifying what you\'re allowed to do. "Are you allowed to do this?"\n  → Role-based access control (RBAC), permissions, row-level security\n\nExample for NatWest Mentor:\n  Authentication: user logs in, receives a JWT signed by the server\n  Authorisation: that JWT contains companyId — the API only returns employees belonging to that company\n\nCommon mistake: implementing authentication but not authorisation. A valid JWT from a legitimate user of Company A should NOT be able to access Company B\'s employee data. Always filter by the authenticated user\'s companyId.',
-    tip: 'The Company A / Company B example is directly relevant to NatWest Mentor\'s multi-tenant architecture.',
+    answer: 'Authentication — verifying who you are. "Are you who you claim to be?"\n  → Login with username/password, JWT token, OAuth\n\nAuthorisation — verifying what you\'re allowed to do. "Are you allowed to do this?"\n  → Role-based access control (RBAC), permissions, row-level security\n\nExample in a multi-tenant HR system:\n  Authentication: user logs in, receives a JWT signed by the server\n  Authorisation: that JWT contains companyId — the API only returns employees belonging to that company\n\nCommon mistake: implementing authentication but not authorisation. A valid JWT from a legitimate user of Company A should NOT be able to access Company B\'s employee data. Always filter by the authenticated user\'s companyId.',
+    tip: 'The Company A / Company B example is a classic multi-tenant authorisation scenario — always bring it up.',
   },
   {
     id: 55,
@@ -1569,8 +1569,8 @@ function searchForNames({ arrayToSearch, searchString }: SearchParams): Employee
     id: 58,
     category: 'security',
     difficulty: 'hard',
-    question: 'What is CORS and how would you configure it correctly for the NatWest Mentor API?',
-    answer: 'CORS (Cross-Origin Resource Sharing): browsers block JavaScript from calling APIs on a different origin unless the server explicitly allows it.\n\nOrigin = protocol + domain + port. https://app.natwestmentor.com and https://api.natwestmentor.com are different origins.\n\nCorrect configuration — restrict to your frontend origin only:\n  // In Express:\n  app.use(cors({ origin: \'https://app.natwestmentor.com\' }));\n\n  // In API Gateway (AWS): set Access-Control-Allow-Origin header\n  // In the Lambda response:\n  return {\n    statusCode: 200,\n    headers: { \'Access-Control-Allow-Origin\': \'https://app.natwestmentor.com\' },\n    body: JSON.stringify(results)\n  };\n\nDo NOT use:\n  Access-Control-Allow-Origin: *  ← allows any website to call your API\n\nAlso configure:\n  Access-Control-Allow-Methods: GET, POST\n  Access-Control-Allow-Headers: Content-Type, Authorization\n  Access-Control-Allow-Credentials: true  (if sending cookies)',
+    question: 'What is CORS and how would you configure it correctly for a production API?',
+    answer: 'CORS (Cross-Origin Resource Sharing): browsers block JavaScript from calling APIs on a different origin unless the server explicitly allows it.\n\nOrigin = protocol + domain + port. https://app.example.com and https://api.example.com are different origins.\n\nCorrect configuration — restrict to your frontend origin only:\n  // In Express:\n  app.use(cors({ origin: \'https://app.example.com\' }));\n\n  // In API Gateway (AWS): set Access-Control-Allow-Origin header\n  // In the Lambda response:\n  return {\n    statusCode: 200,\n    headers: { \'Access-Control-Allow-Origin\': \'https://app.example.com\' },\n    body: JSON.stringify(results)\n  };\n\nDo NOT use:\n  Access-Control-Allow-Origin: *  ← allows any website to call your API\n\nAlso configure:\n  Access-Control-Allow-Methods: GET, POST\n  Access-Control-Allow-Headers: Content-Type, Authorization\n  Access-Control-Allow-Credentials: true  (if sending cookies)',
     tip: 'Wildcard * origin is a common mistake — always restrict to your specific frontend domain in production.',
   },
 
@@ -1638,7 +1638,7 @@ function searchForNames({ arrayToSearch, searchString }: SearchParams): Employee
     category: 'graphql',
     difficulty: 'medium',
     question: 'Why does the resolver filter by companyId from context before calling searchForNames?',
-    answer: 'NatWest Mentor is a multi-tenant system — many client companies share the same database. Without filtering by companyId, a valid user from Company A could receive Company B\'s employee data.\n\nThe companyId comes from the authenticated user\'s JWT token, decoded by middleware and attached to the GraphQL context:\n\n  // Apollo Server context setup\n  const server = new ApolloServer({\n    typeDefs,\n    resolvers,\n    context: ({ req }) => {\n      const token = req.headers.authorization?.split(\'Bearer \')[1];\n      const user = verifyJWT(token); // throws if invalid\n      return { user, db };\n    },\n  });\n\n  // In the resolver:\n  const candidates = await db.execute(\n    \'SELECT * FROM employees WHERE companyId = ?\',\n    [context.user.companyId]  // ← enforces row-level security\n  );\n\nThis means searchForNames only ever sees employees from the authenticated company. Authentication (valid JWT) + authorisation (correct companyId filter) = secure multi-tenant search.',
+    answer: 'This is a multi-tenant system — many client companies share the same database. Without filtering by companyId, a valid user from Company A could receive Company B\'s employee data.\n\nThe companyId comes from the authenticated user\'s JWT token, decoded by middleware and attached to the GraphQL context:\n\n  // Apollo Server context setup\n  const server = new ApolloServer({\n    typeDefs,\n    resolvers,\n    context: ({ req }) => {\n      const token = req.headers.authorization?.split(\'Bearer \')[1];\n      const user = verifyJWT(token); // throws if invalid\n      return { user, db };\n    },\n  });\n\n  // In the resolver:\n  const candidates = await db.execute(\n    \'SELECT * FROM employees WHERE companyId = ?\',\n    [context.user.companyId]  // ← enforces row-level security\n  );\n\nThis means searchForNames only ever sees employees from the authenticated company. Authentication (valid JWT) + authorisation (correct companyId filter) = secure multi-tenant search.',
     tip: 'This ties directly to the test data — the employees array in the test would be scoped to one company in production.',
   },
   {
@@ -1679,7 +1679,7 @@ function searchForNames({ arrayToSearch, searchString }: SearchParams): Employee
     category: 'cicd',
     difficulty: 'hard',
     question: 'What is a monorepo and what are the trade-offs compared to separate repositories?',
-    answer: 'Monorepo: all packages/apps in one Git repository.\n  /packages/web    — React frontend\n  /packages/api    — Lambda handlers\n  /packages/shared — shared TypeScript types (Employee, SearchParams)\n  /infrastructure  — Terraform\n\nAdvantages:\n  ✓ Single PR for cross-cutting changes (e.g. rename Employee.firstName — update type, API, and UI in one commit)\n  ✓ Shared types eliminate frontend/backend drift\n  ✓ Unified tooling (one eslint config, one tsconfig base)\n  ✓ Turborepo caches build/test output — only rebuilds changed packages\n\nDisadvantages:\n  ✗ Repo grows large — git operations slower\n  ✗ CI must be smart about running only affected tests (Turborepo handles this)\n  ✗ Access control is coarser — can\'t give someone access to just the frontend\n  ✗ Noisy git history if many teams work in the same repo\n\nFor NatWest Mentor\'s stack: a monorepo is well-suited — the shared Employee type alone justifies it.',
+    answer: 'Monorepo: all packages/apps in one Git repository.\n  /packages/web    — React frontend\n  /packages/api    — Lambda handlers\n  /packages/shared — shared TypeScript types (Employee, SearchParams)\n  /infrastructure  — Terraform\n\nAdvantages:\n  ✓ Single PR for cross-cutting changes (e.g. rename Employee.firstName — update type, API, and UI in one commit)\n  ✓ Shared types eliminate frontend/backend drift\n  ✓ Unified tooling (one eslint config, one tsconfig base)\n  ✓ Turborepo caches build/test output — only rebuilds changed packages\n\nDisadvantages:\n  ✗ Repo grows large — git operations slower\n  ✗ CI must be smart about running only affected tests (Turborepo handles this)\n  ✗ Access control is coarser — can\'t give someone access to just the frontend\n  ✗ Noisy git history if many teams work in the same repo\n\nFor a full-stack TypeScript project: a monorepo is well-suited — the shared Employee type alone justifies it.',
     tip: 'The shared types argument is the strongest practical benefit — make that concrete with the Employee interface example.',
   },
 ];
