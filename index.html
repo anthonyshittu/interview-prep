@@ -6,7 +6,48 @@
   <title>Interview Prep</title>
   <link rel="stylesheet" href="style.css" />
 </head>
-<body>
+<body style="display:none">
+<script>
+(async () => {
+  const HASH = '16b04d36c487d12d6e014e5e46502aa30ddcfe70f97419612772df956777cf71';
+
+  async function sha256(str) {
+    const buf = await crypto.subtle.digest(
+      'SHA-256',
+      new TextEncoder().encode(str)
+    );
+    return Array.from(new Uint8Array(buf))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+  }
+
+  const pass = new URLSearchParams(window.location.search).get('pass') || '';
+  const hash = await sha256(pass);
+
+  if (hash === HASH) {
+    document.body.style.display = '';
+  } else {
+    document.body.style.display = '';
+    document.body.innerHTML = `
+      <div style="
+        min-height:100vh;
+        display:flex;
+        flex-direction:column;
+        align-items:center;
+        justify-content:center;
+        background:#0f1117;
+        color:#7b82a0;
+        font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+        text-align:center;
+        gap:12px;
+      ">
+        <div style="font-size:48px">🔒</div>
+        <div style="font-size:20px;font-weight:700;color:#e4e6f0">Access denied</div>
+        <div style="font-size:14px">Missing or incorrect access key.</div>
+      </div>`;
+  }
+})();
+</script>
 
 <header>
   <div class="logo">Interview Prep</div>
