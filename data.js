@@ -24,6 +24,41 @@ This order enforces the rules: a full name beats a partial match. Once a word in
         heading: 'Why deduplicate names before matching?',
         body: `If two employees are "Amy Smith" and "Amy Smith" (identical), the uniqueFullNames Set ensures we only try to claim "Amy Smith" once from the search string — not twice. But the final .filter() still runs on the original undeduped array, so both Amy Smith entries are returned in the result.`,
       },
+      {
+        heading: 'What happens when two employees share the same full name? (Amy Smith × 2)',
+        body: `Example: arrayToSearch contains two entries both with firstName: "Amy", lastName: "Smith".
+
+Step 1 — Deduplication phase (claiming):
+  uniqueFullNames = ["Amy Smith"]   ← Set removes the duplicate
+  claimMatch("Amy Smith") is called ONCE
+  → findMatches finds ["amy","smith"] at some position in the search string
+  → Claims those indices. matchedFullNames = {"Amy Smith"}
+
+Step 2 — Final filter (output):
+  arrayToSearch.filter(emp => matchedFullNames.has(getFullName(emp)))
+  → Both emp objects have getFullName() === "Amy Smith"
+  → Both pass the filter
+  → Both are returned in the result
+
+Key insight: deduplication is only about how many times we claim words from the search string. The final output runs on the original array with all duplicates intact — so both Amy Smiths are returned correctly.`,
+      },
+      {
+        heading: 'claimMatch for a duplicate name — what if it ran twice?',
+        body: `First call — claimMatch("Amy Smith"):
+  findMatches returns [[3, 4]] (found "amy smith" at positions 3 and 4)
+  .find() checks [3, 4] — neither index is in usedIndexes
+  .every() returns true for both indices → match found
+  Adds 3 and 4 to usedIndexes → usedIndexes = {3, 4}
+  Returns true ✓
+
+Hypothetical second call — claimMatch("Amy Smith") again (this does NOT happen because deduplication means it's only called once):
+  findMatches returns [[3, 4]] again — same positions
+  .find() checks [3, 4]: index 3 is already in usedIndexes → .every() = false
+  No unclaimed position exists → .find() returns undefined
+  match is undefined → returns false ✗
+
+The deduplication via Set prevents the second call entirely. It's both an optimisation (avoids redundant work) and a correctness guarantee (same words aren't claimed twice).`,
+      },
     ],
   },
   {
@@ -84,6 +119,70 @@ endsWithWords("Billy Bob", "Bob") → true
 Used to skip a last name that was already consumed by a full-name match.
 
 These are word-aware comparisons — not naive string prefix/suffix checks. Critical for multi-word names like "Bonisseur de la Batte".`,
+      },
+      {
+        heading: 'findMatches — full breakdown (reduce as a sliding window)',
+        body: `function findMatches(searchWords, name) {
+  const nameWords = splitIntoWords(name);   // e.g. ["amy","smith"]
+  const nameLen   = nameWords.length;       // e.g. 2
+
+  return searchWords.reduce((acc, _, i) => {
+    if (nameWords.every((word, j) => word === searchWords[i + j])) {
+      acc.push(Array.from({ length: nameLen }, (_, j) => i + j));
+    }
+    return acc;
+  }, []);
+}
+
+What each piece does:
+  nameWords          — tokenised words of the name being searched for
+  nameLen            — how many words the name has (sets inner array length)
+  reduce(acc, _, i)  — _ is the current element (ignored); i is the position index
+  nameWords.every()  — checks that every word in the name matches searchWords starting at i
+    word === searchWords[i + j]  — compares name word j against search word at position i+j
+    (consecutive match check)
+  Array.from({ length: nameLen }, (_, j) => i + j)
+    — generates [i, i+1, ..., i+nameLen-1] — the word positions that would be claimed
+
+For "Amy Smith" at position 3 in searchWords:
+  i = 3
+  every: "amy" === searchWords[3] ✓, "smith" === searchWords[4] ✓
+  push [3, 4]
+
+Result: [[3, 4]] — one match, at positions 3 and 4.
+If "Amy Smith" appeared twice in the search string: [[3, 4], [7, 8]]`,
+      },
+      {
+        heading: 'claimMatch — the .find().every() chain explained',
+        body: `const match = findMatches(searchWords, name).find((indexes) =>
+  indexes.every((index) => !usedIndexes.has(index)),
+);
+
+Breaking it down step by step:
+
+1. findMatches(searchWords, name)
+   → Returns all positions where the name appears: e.g. [[3, 4], [7, 8]]
+   Each inner array is one occurrence of the name in the search string.
+
+2. .find((indexes) => ...)
+   → Iterates through the positions [[3, 4], [7, 8]]
+   → Returns the FIRST position where the condition is true
+   → If no position passes: returns undefined (match is undefined → function returns false)
+
+3. indexes.every((index) => !usedIndexes.has(index))
+   → Checks that ALL indices in this position are unclaimed
+   → For [3, 4]: is 3 in usedIndexes? No. Is 4 in usedIndexes? No. → true ✓
+   → For [7, 8]: is 7 in usedIndexes? No. Is 8 in usedIndexes? No. → true ✓
+   → .find() stops at the first true result and returns [3, 4]
+
+4. if (!match) return false
+   → If .find() returned undefined (no unclaimed position found) → return false
+
+5. match.forEach(index => usedIndexes.add(index))
+   → Marks [3, 4] as claimed → usedIndexes = {..., 3, 4}
+   → Returns true ✓
+
+The key: .find() gives you the first valid position; .every() ensures the ENTIRE name's positions are free — a partial overlap is not acceptable.`,
       },
     ],
   },
@@ -1672,6 +1771,40 @@ function searchForNames({ arrayToSearch, searchString }: SearchParams): Employee
     question: 'How would GraphQL error handling work if searchForNames throws an unexpected error?',
     answer: 'If the resolver throws, Apollo Server catches it and adds it to the errors array in the response. The client always gets a predictable shape:\n\n  // Response on unhandled throw:\n  {\n    "data": { "searchEmployees": null },\n    "errors": [{\n      "message": "Internal server error",\n      "locations": [{ "line": 2, "column": 3 }],\n      "path": ["searchEmployees"]\n    }]\n  }\n\nBetter — distinguish user errors from system errors:\n\n  searchEmployees: async (_, { input }, context) => {\n    // User error — predictable, expected\n    if (!input.searchString.trim()) {\n      throw new UserInputError(\'Search string cannot be empty\', {\n        field: \'searchString\'\n      });\n    }\n\n    try {\n      const candidates = await db.execute(...);\n      return { employees: searchForNames({ arrayToSearch: candidates, ...input }), ... };\n    } catch (err) {\n      // System error — log it, return generic message to client\n      logger.error(\'searchEmployees resolver failed\', { err, userId: context.user.id });\n      throw new ApolloError(\'Search temporarily unavailable\');\n    }\n  };\n\nNever expose raw error messages or stack traces to the client — they reveal implementation details.',
     tip: 'Never expose raw error messages to the client. Log the real error server-side, return a generic message to the user.',
+  },
+
+  // ── DEEP DIVES (from Q&A session) ────────────────────────────────────────
+  {
+    id: 72,
+    category: 'solution',
+    difficulty: 'medium',
+    question: 'The test data has two employees both named Amy Smith. How does the function return both of them?',
+    answer: 'Two-phase answer:\n\n1. Claiming phase: uniqueFullNames is a Set, so "Amy Smith" appears only once. claimMatch("Amy Smith") is called once — it finds and claims the word positions. matchedFullNames = {"Amy Smith"}.\n\n2. Output phase: the final .filter() runs on the ORIGINAL arrayToSearch, which still has both Amy Smith entries. Both have getFullName() === "Amy Smith", both are in matchedFullNames → both pass the filter → both are returned.\n\nDeduplication only prevents claiming the same words twice from the search string. It has nothing to do with how many employees are returned.',
+    tip: 'The claiming phase and the output phase use different arrays — that\'s the key.',
+  },
+  {
+    id: 73,
+    category: 'solution',
+    difficulty: 'hard',
+    question: 'If claimMatch("Amy Smith") were somehow called a second time, what would happen?',
+    answer: 'It would return false.\n\nAfter the first call, the word positions for "amy" and "smith" are in usedIndexes. On a hypothetical second call:\n\n  findMatches returns [[3, 4]] — same positions as before\n  .find() checks [3, 4]:\n    index 3 → usedIndexes.has(3) = true → .every() = false\n  No unclaimed position found → .find() returns undefined\n  match is undefined → return false\n\nThis is exactly why deduplication is the right approach — without it, the second call would consume positions that were already claimed, and the real purpose (preventing one word from matching two different names) would break. The Set deduplication pre-empts this before it happens.',
+    tip: 'The second call returning false is NOT a problem — the deduplication prevents it from ever happening.',
+  },
+  {
+    id: 74,
+    category: 'functions',
+    difficulty: 'medium',
+    question: 'How does findMatches use reduce as a sliding window? Walk through it for "Amy Smith" in "pay for amy smith today".',
+    answer: 'searchWords = ["pay","for","amy","smith","today"]\nnameWords   = ["amy","smith"]\nnameLen     = 2\n\nreduce iterates i = 0, 1, 2, 3, 4:\n  i=0: "amy" === "pay"? No → skip\n  i=1: "amy" === "for"? No → skip\n  i=2: "amy" === "amy"? Yes. "smith" === searchWords[3]? Yes → match!\n    push Array.from({length:2}, (_, j) => 2+j) = [2, 3]\n  i=3: "amy" === "smith"? No → skip\n  i=4: "amy" === "today"? No → skip\n\nResult: [[2, 3]]\n\nThe _ in reduce((acc, _, i) => ...) is the current element — ignored because we only care about the position i.\nArray.from({length:2}, (_, j) => 2+j) generates [2, 3] — the indices that would be claimed.',
+    tip: 'The _ in reduce is a convention for "I don\'t use this parameter". Only i (the index) matters.',
+  },
+  {
+    id: 75,
+    category: 'functions',
+    difficulty: 'hard',
+    question: 'Break down the .find().every() chain inside claimMatch. What does each part do and why is .every() needed?',
+    answer: 'Code:\n  const match = findMatches(searchWords, name).find((indexes) =>\n    indexes.every((index) => !usedIndexes.has(index)),\n  );\n\nStep by step:\n\n1. findMatches returns all positions where the name appears:\n   e.g. [[3,4], [7,8]] (name found at two places in the search string)\n\n2. .find((indexes) => ...) — iterates through positions, returns first passing one:\n   checks [3,4] first. If that passes, stops and returns [3,4].\n   If [3,4] fails, tries [7,8]. If both fail, returns undefined.\n\n3. indexes.every((index) => !usedIndexes.has(index)) — ALL indices must be unclaimed:\n   For [3,4]: is 3 in usedIndexes? No. Is 4 in usedIndexes? No. → true\n   If even ONE index was claimed, .every() = false → this position is rejected\n\nWhy .every() and not .some():\n   .some() would allow a partial overlap — claiming a position where one word is already taken.\n   That would be wrong: if "amy" (index 3) was already claimed by another name, we cannot claim "Amy Smith" at positions [3,4]. Both words must be free.\n\n4. if (!match) return false — undefined means no valid position found.\n5. match.forEach(i => usedIndexes.add(i)) — mark the position as claimed.',
+    tip: '.every() is the guard that prevents partial overlaps. .find() is what gives you the first valid position.',
   },
 
   {
